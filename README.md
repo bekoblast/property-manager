@@ -34,6 +34,8 @@ npm audit --omit=dev
 ## Current Notes
 
 - Data is stored locally in the browser under `aqarati.*` keys.
+- Shared domain types and seed data live in `src/data.ts` so the UI can later switch from `localStorage` to an API/database.
+- The first backend draft is documented in `docs/database-schema.sql` and `docs/api-contract.md`.
 - Report export libraries are code-split so the main app loads before Excel/PDF code is downloaded.
 - Vite may still warn about the lazy Excel export chunk size because `exceljs` is large. This does not block the build.
 - The next production step is to replace `localStorage` with a backend database and add user roles.
