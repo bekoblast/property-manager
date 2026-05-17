@@ -14,6 +14,28 @@ Arabic RTL web app for managing company properties in Saudi Arabia. The app cove
 - Local Express + SQLite API.
 - API mode with browser-local fallback when the API is offline.
 
+## Screenshots
+
+### Dashboard
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+### Properties
+
+![Properties](docs/screenshots/properties.png)
+
+### Units
+
+![Units](docs/screenshots/units.png)
+
+### Contracts
+
+![Contracts](docs/screenshots/contracts.png)
+
+### Reports
+
+![Reports](docs/screenshots/reports.png)
+
 ## Tech Stack
 
 - React + TypeScript + Vite
@@ -69,6 +91,7 @@ This runs lint, build, and production dependency audit.
 - [API Contract](docs/api-contract.md)
 - [Production Database Draft](docs/database-schema.sql)
 - [Public Release Checklist](docs/PUBLIC_RELEASE_CHECKLIST.md)
+- [Roadmap](docs/ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 
