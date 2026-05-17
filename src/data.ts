@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 
 export type View = 'dashboard' | 'properties' | 'units' | 'tenants' | 'contracts' | 'payments' | 'maintenance' | 'reports' | 'settings'
 export type PropertyType = 'سكني' | 'تجاري' | 'مختلط'
@@ -120,10 +120,10 @@ export function useStoredState<T>(key: string, seed: T[]) {
     return saved ? (JSON.parse(saved) as T[]) : seed
   })
 
-  const save = (next: T[]) => {
+  const save = useCallback((next: T[]) => {
     setItems(next)
     localStorage.setItem(key, JSON.stringify(next))
-  }
+  }, [key])
 
   return [items, save] as const
 }

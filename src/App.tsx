@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   AlertTriangle,
@@ -34,6 +34,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { apiDelete, apiHealth, apiList, apiSave } from './api'
+import type { ApiResource } from './api'
 import {
   money,
   number,
@@ -84,12 +86,56 @@ function App() {
   const [query, setQuery] = useState('')
   const [modal, setModal] = useState<ModalState>(null)
   const [form, setForm] = useState<FormValues>({})
+  const [apiOnline, setApiOnline] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('محلي')
   const [properties, setProperties] = useStoredState<Property>('aqarati.properties', seedProperties)
   const [units, setUnits] = useStoredState<Unit>('aqarati.units', seedUnits)
   const [tenants, setTenants] = useStoredState<Tenant>('aqarati.tenants', seedTenants)
   const [contracts, setContracts] = useStoredState<Contract>('aqarati.contracts', seedContracts)
   const [payments, setPayments] = useStoredState<Payment>('aqarati.payments', seedPayments)
   const [maintenance, setMaintenance] = useStoredState<Maintenance>('aqarati.maintenance', seedMaintenance)
+
+  useEffect(() => {
+    let active = true
+
+    async function loadApiData() {
+      const online = await apiHealth()
+      if (!active) return
+      setApiOnline(online)
+      setSyncMessage(online ? 'متصل بالـ API' : 'وضع محلي')
+
+      if (!online) return
+
+      try {
+        const [nextProperties, nextUnits, nextTenants, nextContracts, nextPayments, nextMaintenance] = await Promise.all([
+          apiList<Property>('properties'),
+          apiList<Unit>('units'),
+          apiList<Tenant>('tenants'),
+          apiList<Contract>('contracts'),
+          apiList<Payment>('payments'),
+          apiList<Maintenance>('maintenance'),
+        ])
+
+        if (!active) return
+        setProperties(nextProperties)
+        setUnits(nextUnits)
+        setTenants(nextTenants)
+        setContracts(nextContracts)
+        setPayments(nextPayments)
+        setMaintenance(nextMaintenance)
+      } catch {
+        if (!active) return
+        setApiOnline(false)
+        setSyncMessage('وضع محلي')
+      }
+    }
+
+    loadApiData()
+
+    return () => {
+      active = false
+    }
+  }, [setContracts, setMaintenance, setPayments, setProperties, setTenants, setUnits])
 
   const propertyName = (id: string) => properties.find((property) => property.id === id)?.name || 'غير محدد'
   const tenantName = (id: string) => tenants.find((tenant) => tenant.id === id)?.name || 'بدون مستأجر'
@@ -159,53 +205,104 @@ function App() {
   const stringify = (item: Record<string, string | number | boolean>) =>
     Object.fromEntries(Object.entries(item).map(([key, value]) => [key, String(value)]))
 
-  const submitForm = (event: FormEvent) => {
+  const submitForm = async (event: FormEvent) => {
     event.preventDefault()
     if (!modal) return
+
+    const isExisting = Boolean(modal.id)
 
     if (modal.kind === 'property') {
       const next: Property = { id: modal.id || uid('p'), name: form.name, city: form.city, district: form.district, type: form.type as PropertyType, units: Number(form.units), manager: form.manager }
       setProperties(upsert(properties, next))
+      await syncSave('properties', next, isExisting)
     }
     if (modal.kind === 'unit') {
       const next: Unit = { id: modal.id || uid('u'), propertyId: form.propertyId, number: form.number, type: form.type as UnitType, status: form.status as UnitStatus, rent: Number(form.rent), tenantId: form.tenantId, ejar: form.ejar, contractEnd: form.contractEnd, nextDue: form.nextDue, paid: Number(form.paid), overdue: Number(form.overdue), vat: form.vat === 'true' }
       setUnits(upsert(units, next))
+      await syncSave('units', next, isExisting)
     }
     if (modal.kind === 'tenant') {
       const next: Tenant = { id: modal.id || uid('t'), name: form.name, mobile: form.mobile, nationalId: form.nationalId, email: form.email }
       setTenants(upsert(tenants, next))
+      await syncSave('tenants', next, isExisting)
     }
     if (modal.kind === 'contract') {
       const next: Contract = { id: modal.id || uid('c'), ejar: form.ejar, unitId: form.unitId, tenantId: form.tenantId, start: form.start, end: form.end, rent: Number(form.rent), frequency: form.frequency as Contract['frequency'], status: form.status as ContractStatus, vat: form.vat === 'true' }
+      const linkedUnit = units.find((unit) => unit.id === next.unitId)
+      const syncedUnit = linkedUnit ? { ...linkedUnit, status: 'مؤجرة' as UnitStatus, tenantId: next.tenantId, ejar: next.ejar, contractEnd: next.end, rent: next.rent, vat: next.vat } : undefined
       setContracts(upsert(contracts, next))
-      setUnits(units.map((unit) => (unit.id === next.unitId ? { ...unit, status: 'مؤجرة', tenantId: next.tenantId, ejar: next.ejar, contractEnd: next.end, rent: next.rent, vat: next.vat } : unit)))
+      if (syncedUnit) setUnits(units.map((unit) => (unit.id === next.unitId ? syncedUnit : unit)))
+      await syncSave('contracts', next, isExisting)
+      if (syncedUnit) await syncSave('units', syncedUnit, true)
     }
     if (modal.kind === 'payment') {
       const next: Payment = { id: modal.id || uid('pay'), contractId: form.contractId, unitId: form.unitId, tenantId: form.tenantId, dueDate: form.dueDate, amount: Number(form.amount), status: form.status as PaymentStatus }
       setPayments(upsert(payments, next))
+      await syncSave('payments', next, isExisting)
     }
     if (modal.kind === 'maintenance') {
       const next: Maintenance = { id: modal.id || uid('m'), unitId: form.unitId, title: form.title, priority: form.priority as Maintenance['priority'], status: form.status as MaintenanceStatus, date: form.date, cost: Number(form.cost) }
       setMaintenance(upsert(maintenance, next))
+      await syncSave('maintenance', next, isExisting)
     }
     setModal(null)
   }
 
   const upsert = <T extends { id: string }>(items: T[], item: T) => (items.some((current) => current.id === item.id) ? items.map((current) => (current.id === item.id ? item : current)) : [item, ...items])
 
-  const removeItem = (kind: ModalKind, id: string) => {
+  const syncSave = async <T extends { id: string }>(resource: ApiResource, item: T, isExisting: boolean) => {
+    if (!apiOnline) return
+
+    try {
+      await apiSave(resource, item, isExisting)
+      setSyncMessage('متصل بالـ API')
+    } catch {
+      setApiOnline(false)
+      setSyncMessage('وضع محلي')
+    }
+  }
+
+  const syncDelete = async (resource: ApiResource, id: string) => {
+    if (!apiOnline) return
+
+    try {
+      await apiDelete(resource, id)
+      setSyncMessage('متصل بالـ API')
+    } catch {
+      setApiOnline(false)
+      setSyncMessage('وضع محلي')
+    }
+  }
+
+  const removeItem = async (kind: ModalKind, id: string) => {
     if (kind === 'property' && units.some((unit) => unit.propertyId === id)) return alert('لا يمكن حذف عقار مرتبط بوحدات.')
     if (kind === 'tenant' && units.some((unit) => unit.tenantId === id)) return alert('لا يمكن حذف مستأجر مرتبط بوحدة أو عقد.')
-    if (kind === 'property') setProperties(properties.filter((item) => item.id !== id))
+    if (kind === 'property') {
+      setProperties(properties.filter((item) => item.id !== id))
+      await syncDelete('properties', id)
+    }
     if (kind === 'unit') {
       setUnits(units.filter((item) => item.id !== id))
       setContracts(contracts.filter((item) => item.unitId !== id))
       setPayments(payments.filter((item) => item.unitId !== id))
+      await syncDelete('units', id)
     }
-    if (kind === 'tenant') setTenants(tenants.filter((item) => item.id !== id))
-    if (kind === 'contract') setContracts(contracts.filter((item) => item.id !== id))
-    if (kind === 'payment') setPayments(payments.filter((item) => item.id !== id))
-    if (kind === 'maintenance') setMaintenance(maintenance.filter((item) => item.id !== id))
+    if (kind === 'tenant') {
+      setTenants(tenants.filter((item) => item.id !== id))
+      await syncDelete('tenants', id)
+    }
+    if (kind === 'contract') {
+      setContracts(contracts.filter((item) => item.id !== id))
+      await syncDelete('contracts', id)
+    }
+    if (kind === 'payment') {
+      setPayments(payments.filter((item) => item.id !== id))
+      await syncDelete('payments', id)
+    }
+    if (kind === 'maintenance') {
+      setMaintenance(maintenance.filter((item) => item.id !== id))
+      await syncDelete('maintenance', id)
+    }
   }
 
   const exportExcel = async () => {
@@ -278,6 +375,7 @@ function App() {
             <h1>{navItems.find((item) => item.id === activeView)?.label}</h1>
           </div>
           <div className="toolbar">
+            <span className="pill">{syncMessage}</span>
             <label className="search">
               <Search size={17} />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="بحث بالوحدة، العقار، المستأجر أو رقم إيجار" />
