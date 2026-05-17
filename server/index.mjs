@@ -8,10 +8,11 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const dataDir = join(__dirname, 'data')
-const dbPath = join(dataDir, 'aqarati.db')
+const dbPath = process.env.DATABASE_PATH || join(dataDir, 'aqarati.db')
 
-if (!existsSync(dataDir)) {
-  mkdirSync(dataDir, { recursive: true })
+const selectedDataDir = dirname(dbPath)
+if (!existsSync(selectedDataDir)) {
+  mkdirSync(selectedDataDir, { recursive: true })
 }
 
 const db = new Database(dbPath)
@@ -31,6 +32,31 @@ const tables = {
   contracts: ['id', 'ejar', 'unitId', 'tenantId', 'start', 'end', 'rent', 'frequency', 'status', 'vat'],
   payments: ['id', 'contractId', 'unitId', 'tenantId', 'dueDate', 'amount', 'status'],
   maintenance: ['id', 'unitId', 'title', 'priority', 'status', 'date', 'cost'],
+}
+
+const requiredFields = {
+  properties: ['name', 'city', 'district', 'type', 'manager'],
+  units: ['propertyId', 'number', 'type', 'status'],
+  tenants: ['name', 'mobile', 'nationalId'],
+  contracts: ['ejar', 'unitId', 'tenantId', 'start', 'end', 'frequency', 'status'],
+  payments: ['contractId', 'unitId', 'tenantId', 'dueDate', 'status'],
+  maintenance: ['unitId', 'title', 'priority', 'status', 'date'],
+}
+
+const enums = {
+  properties: { type: ['سكني', 'تجاري', 'مختلط'] },
+  units: { type: ['شقة', 'محل'], status: ['مؤجرة', 'شاغرة', 'صيانة'] },
+  contracts: { frequency: ['شهري', 'ربع سنوي', 'سنوي'], status: ['نشط', 'ينتهي قريباً', 'منتهي'] },
+  payments: { status: ['مدفوعة', 'مستحقة', 'متأخرة'] },
+  maintenance: { priority: ['عادية', 'عاجلة'], status: ['مفتوح', 'قيد التنفيذ', 'مغلق'] },
+}
+
+const numericFields = {
+  properties: ['units'],
+  units: ['rent', 'paid', 'overdue'],
+  contracts: ['rent'],
+  payments: ['amount'],
+  maintenance: ['cost'],
 }
 
 const seed = {
@@ -103,7 +129,9 @@ for (const table of Object.keys(tables)) {
 
   app.post(`/api/${table}`, (request, response) => {
     const item = normalize(table, { ...request.body, id: request.body.id || randomUUID() })
+    validate(table, item)
     insert(table, item)
+    applySideEffects(table, item)
     response.status(201).json(find(table, item.id))
   })
 
@@ -111,20 +139,23 @@ for (const table of Object.keys(tables)) {
     const existing = find(table, request.params.id)
     if (!existing) return response.status(404).json({ message: 'Record not found' })
     const item = normalize(table, { ...existing, ...request.body, id: request.params.id })
+    validate(table, item)
     update(table, item)
+    applySideEffects(table, item)
     response.json(find(table, item.id))
   })
 
   app.delete(`/api/${table}/:id`, (request, response) => {
     const existing = find(table, request.params.id)
     if (!existing) return response.status(404).json({ message: 'Record not found' })
+    protectDelete(table, request.params.id)
     db.prepare(`delete from ${table} where id = ?`).run(request.params.id)
     response.status(204).send()
   })
 }
 
 app.use((error, _request, response, _next) => {
-  response.status(400).json({ message: error.message || 'Unexpected API error' })
+  response.status(error.status || 400).json({ message: error.message || 'Unexpected API error' })
 })
 
 app.listen(port, () => {
@@ -164,10 +195,80 @@ function update(table, row) {
   db.prepare(`update ${table} set ${assignments} where id = ?`).run([...columns.map((column) => row[column] ?? ''), row.id])
 }
 
+function validate(table, row) {
+  for (const field of requiredFields[table] || []) {
+    if (row[field] === undefined || row[field] === null || String(row[field]).trim() === '') {
+      throw httpError(422, `${field} is required`)
+    }
+  }
+
+  for (const [field, values] of Object.entries(enums[table] || {})) {
+    if (!values.includes(row[field])) {
+      throw httpError(422, `${field} must be one of: ${values.join(', ')}`)
+    }
+  }
+
+  for (const field of numericFields[table] || []) {
+    if (!Number.isFinite(row[field]) || row[field] < 0) {
+      throw httpError(422, `${field} must be a positive number`)
+    }
+  }
+
+  if ('start' in row && !isDate(row.start)) throw httpError(422, 'start must use YYYY-MM-DD')
+  if ('end' in row && !isDate(row.end)) throw httpError(422, 'end must use YYYY-MM-DD')
+  if ('dueDate' in row && !isDate(row.dueDate)) throw httpError(422, 'dueDate must use YYYY-MM-DD')
+  if ('date' in row && !isDate(row.date)) throw httpError(422, 'date must use YYYY-MM-DD')
+  if ('start' in row && 'end' in row && row.end < row.start) throw httpError(422, 'end must be after start')
+
+  if (table === 'units') requireRecord('properties', row.propertyId, 'propertyId')
+  if (table === 'contracts') {
+    requireRecord('units', row.unitId, 'unitId')
+    requireRecord('tenants', row.tenantId, 'tenantId')
+    const existing = db.prepare('select id from contracts where ejar = ? and id != ?').get(row.ejar, row.id)
+    if (existing) throw httpError(409, 'ejar must be unique')
+  }
+  if (table === 'payments') {
+    requireRecord('contracts', row.contractId, 'contractId')
+    requireRecord('units', row.unitId, 'unitId')
+    requireRecord('tenants', row.tenantId, 'tenantId')
+    const contract = find('contracts', row.contractId)
+    if (contract.unitId !== row.unitId || contract.tenantId !== row.tenantId) {
+      throw httpError(422, 'payment unit and tenant must match the contract')
+    }
+  }
+  if (table === 'maintenance') requireRecord('units', row.unitId, 'unitId')
+}
+
+function protectDelete(table, id) {
+  const relations = {
+    properties: [['units', 'propertyId']],
+    tenants: [['units', 'tenantId'], ['contracts', 'tenantId'], ['payments', 'tenantId']],
+    units: [['contracts', 'unitId'], ['payments', 'unitId'], ['maintenance', 'unitId']],
+    contracts: [['payments', 'contractId']],
+  }
+
+  for (const [childTable, column] of relations[table] || []) {
+    const count = db.prepare(`select count(*) as count from ${childTable} where ${column} = ?`).get(id).count
+    if (count > 0) {
+      throw httpError(409, `Cannot delete ${table} while related ${childTable} records exist`)
+    }
+  }
+}
+
+function applySideEffects(table, row) {
+  if (table !== 'contracts') return
+
+  db.prepare(`
+    update units
+    set status = ?, tenantId = ?, ejar = ?, contractEnd = ?, rent = ?, vat = ?
+    where id = ?
+  `).run('مؤجرة', row.tenantId, row.ejar, row.end, row.rent, row.vat, row.unitId)
+}
+
 function normalize(table, row) {
   const next = { ...row }
   for (const column of ['units', 'rent', 'paid', 'overdue', 'amount', 'cost']) {
-    if (column in next) next[column] = Number(next[column] || 0)
+    if (tables[table].includes(column)) next[column] = Number(next[column] || 0)
   }
   if ('vat' in next) next.vat = next.vat === true || next.vat === 'true' || next.vat === 1 ? 1 : 0
   return Object.fromEntries(tables[table].map((column) => [column, next[column] ?? '']))
@@ -177,4 +278,20 @@ function normalizeFromDb(_table, row) {
   const next = { ...row }
   if ('vat' in next) next.vat = Boolean(next.vat)
   return next
+}
+
+function requireRecord(table, id, field) {
+  if (!id || !find(table, id)) {
+    throw httpError(422, `${field} must reference an existing ${table} record`)
+  }
+}
+
+function isDate(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`))
+}
+
+function httpError(status, message) {
+  const error = new Error(message)
+  error.status = status
+  return error
 }

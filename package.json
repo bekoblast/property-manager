@@ -9,9 +9,10 @@
     "dev": "vite --host 127.0.0.1 --port 3000",
     "api": "node server/index.mjs",
     "build": "tsc -b && vite build",
-    "check": "npm run lint && npm run build && npm audit --omit=dev",
+    "check": "npm run lint && npm run test:backend && npm run build && npm audit --omit=dev",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:backend": "node --test server/*.test.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",

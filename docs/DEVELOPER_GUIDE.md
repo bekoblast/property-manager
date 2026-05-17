@@ -80,6 +80,7 @@ Or run them separately:
 
 ```powershell
 npm run lint
+npm run test:backend
 npm run build
 npm audit --omit=dev
 ```
@@ -111,6 +112,20 @@ When the API is offline:
 - Exposes `/api/health`, `/api/dashboard`, and CRUD endpoints.
 
 The current backend is intentionally simple. It is a local development bridge, not the final production backend.
+
+## Backend Validation
+
+The API validates:
+
+- Required fields.
+- Allowed status/type values.
+- Positive numeric values.
+- Date strings in `YYYY-MM-DD` format.
+- Existing foreign-key references.
+- Unique Ejar contract numbers.
+- Payment unit/tenant alignment with the selected contract.
+
+Delete protection blocks removing parent records that still have related children, such as properties with units or contracts with payments.
 
 ## Main Resources
 

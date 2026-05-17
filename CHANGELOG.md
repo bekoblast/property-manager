@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented here.
 
+## [Unreleased]
+
+### Added
+
+- Backend validation for required fields, enum values, dates, positive numbers, references, unique Ejar numbers, and payment-contract alignment.
+- Backend delete protection for related records.
+- Backend test suite using Node's built-in test runner.
+
 ## [0.1.0] - 2026-05-17
 
 ### Added
