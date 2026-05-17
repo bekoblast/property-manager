@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 3000",
     "api": "node server/index.mjs",
     "build": "tsc -b && vite build",
+    "check": "npm run lint && npm run build && npm audit --omit=dev",
     "lint": "eslint .",
     "preview": "vite preview"
   },
