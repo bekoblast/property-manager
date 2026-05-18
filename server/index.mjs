@@ -2,17 +2,21 @@ import cors from 'cors'
 import express from 'express'
 import Database from 'better-sqlite3'
 import { pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const dataDir = join(__dirname, 'data')
 const dbPath = process.env.DATABASE_PATH || join(dataDir, 'aqarati.db')
+const backupDir = process.env.BACKUP_DIR || join(dataDir, 'backups')
 
 const selectedDataDir = dirname(dbPath)
 if (!existsSync(selectedDataDir)) {
   mkdirSync(selectedDataDir, { recursive: true })
+}
+if (!existsSync(backupDir)) {
+  mkdirSync(backupDir, { recursive: true })
 }
 
 const db = new Database(dbPath)
@@ -28,6 +32,7 @@ app.use(express.json())
 
 const tables = {
   users: ['id', 'name', 'email', 'role', 'passwordHash', 'passwordSalt', 'active'],
+  audit_logs: ['id', 'userId', 'userEmail', 'action', 'resource', 'recordId', 'createdAt', 'details'],
   properties: ['id', 'name', 'city', 'district', 'type', 'units', 'manager'],
   units: ['id', 'propertyId', 'number', 'type', 'status', 'rent', 'tenantId', 'ejar', 'contractEnd', 'nextDue', 'paid', 'overdue', 'vat'],
   tenants: ['id', 'name', 'mobile', 'nationalId', 'email'],
@@ -70,6 +75,8 @@ const rolePermissions = {
   maintenance: { read: ['dashboard', 'properties', 'units', 'tenants', 'contracts', 'payments', 'maintenance'], write: ['maintenance'] },
   viewer: { read: ['dashboard', 'properties', 'units', 'tenants', 'contracts', 'payments', 'maintenance'], write: [] },
 }
+
+const hiddenResources = new Set(['users', 'audit_logs'])
 
 const seed = {
   users: [
@@ -124,16 +131,44 @@ app.post('/api/auth/login', (request, response) => {
 
   const token = randomBytes(32).toString('hex')
   sessions.set(token, publicUser(user))
+  auditLog(publicUser(user), 'login', 'auth', user.id)
   response.json({ token, user: publicUser(user) })
 })
 
 app.post('/api/auth/logout', authenticate, (request, response) => {
   sessions.delete(request.token)
+  auditLog(request.user, 'logout', 'auth', request.user.id)
   response.status(204).send()
 })
 
 app.get('/api/auth/me', authenticate, (request, response) => {
   response.json({ user: request.user })
+})
+
+app.get('/api/audit-logs', authenticate, authorize('audit_logs', 'read'), (_request, response) => {
+  response.json(db.prepare('select * from audit_logs order by createdAt desc limit 200').all())
+})
+
+app.get('/api/backups', authenticate, authorize('backups', 'read'), (_request, response) => {
+  response.json(listBackups())
+})
+
+app.post('/api/backups', authenticate, authorize('backups', 'write'), (request, response) => {
+  const backup = createBackup()
+  auditLog(request.user, 'backup', 'backups', backup.name)
+  response.status(201).json(backup)
+})
+
+app.post('/api/backups/:name/restore', authenticate, authorize('backups', 'write'), (request, response) => {
+  const backupPath = safeBackupPath(request.params.name)
+  if (!existsSync(backupPath)) return response.status(404).json({ message: 'Backup not found' })
+  auditLog(request.user, 'restore', 'backups', request.params.name)
+  response.json({ restored: request.params.name, restartRequired: true })
+  setTimeout(() => {
+    db.close()
+    copyFileSync(backupPath, dbPath)
+    process.exit(0)
+  }, 100)
 })
 
 app.get('/api/dashboard', authenticate, authorize('dashboard', 'read'), (_request, response) => {
@@ -159,6 +194,8 @@ app.get('/api/dashboard', authenticate, authorize('dashboard', 'read'), (_reques
 })
 
 for (const table of Object.keys(tables)) {
+  if (hiddenResources.has(table)) continue
+
   app.get(`/api/${table}`, authenticate, authorize(table, 'read'), (_request, response) => {
     response.json(list(table).map((item) => serialize(table, item)))
   })
@@ -174,6 +211,7 @@ for (const table of Object.keys(tables)) {
     validate(table, item)
     insert(table, item)
     applySideEffects(table, item)
+    auditLog(request.user, 'create', table, item.id)
     response.status(201).json(serialize(table, find(table, item.id)))
   })
 
@@ -184,6 +222,7 @@ for (const table of Object.keys(tables)) {
     validate(table, item)
     update(table, item)
     applySideEffects(table, item)
+    auditLog(request.user, 'update', table, item.id)
     response.json(serialize(table, find(table, item.id)))
   })
 
@@ -192,6 +231,7 @@ for (const table of Object.keys(tables)) {
     if (!existing) return response.status(404).json({ message: 'Record not found' })
     protectDelete(table, request.params.id)
     db.prepare(`delete from ${table} where id = ?`).run(request.params.id)
+    auditLog(request.user, 'delete', table, request.params.id)
     response.status(204).send()
   })
 }
@@ -415,4 +455,46 @@ function publicUser(user) {
     role: user.role,
     active: Boolean(user.active),
   }
+}
+
+function auditLog(user, action, resource, recordId = '', details = {}) {
+  insert('audit_logs', {
+    id: randomUUID(),
+    userId: user?.id || '',
+    userEmail: user?.email || '',
+    action,
+    resource,
+    recordId,
+    createdAt: new Date().toISOString(),
+    details: JSON.stringify(details),
+  })
+}
+
+function listBackups() {
+  return readdirSync(backupDir)
+    .filter((name) => /^aqarati-\d{8}-\d{6}\.db$/.test(name))
+    .map((name) => {
+      const stats = statSync(join(backupDir, name))
+      return { name, size: stats.size, createdAt: stats.birthtime.toISOString() }
+    })
+    .sort((a, b) => b.name.localeCompare(a.name))
+}
+
+function createBackup() {
+  db.pragma('wal_checkpoint(FULL)')
+  const now = new Date()
+  const stamp = now.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+  const name = `aqarati-${stamp}.db`
+  const target = join(backupDir, name)
+  copyFileSync(dbPath, target)
+  const stats = statSync(target)
+  return { name, size: stats.size, createdAt: stats.birthtime.toISOString() }
+}
+
+function safeBackupPath(name) {
+  if (!/^aqarati-\d{8}-\d{6}\.db$/.test(name)) {
+    throw httpError(400, 'Invalid backup name')
+  }
+
+  return join(backupDir, name)
 }

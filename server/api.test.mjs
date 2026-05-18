@@ -20,6 +20,7 @@ before(async () => {
       ...process.env,
       API_PORT: String(port),
       DATABASE_PATH: join(tempDir, 'test.db'),
+      BACKUP_DIR: join(tempDir, 'backups'),
     },
     stdio: 'ignore',
   })
@@ -64,6 +65,28 @@ test('viewer role can read but cannot write', async () => {
     body: JSON.stringify({ name: 'Blocked', city: 'الرياض', district: 'النرجس', type: 'سكني', manager: 'Viewer' }),
   })
   assert.equal(writeResponse.status, 403)
+})
+
+test('manager can read audit logs', async () => {
+  const logs = await request('/audit-logs')
+  assert.ok(logs.some((log) => log.action === 'login' && log.resource === 'auth'))
+})
+
+test('manager can create and list backups', async () => {
+  const backup = await request('/backups', { method: 'POST' })
+  assert.match(backup.name, /^aqarati-\d{8}-\d{6}\.db$/)
+  assert.ok(backup.size > 0)
+
+  const backups = await request('/backups')
+  assert.ok(backups.some((item) => item.name === backup.name))
+})
+
+test('viewer cannot create backups', async () => {
+  const response = await fetch(`${baseUrl}/backups`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${viewerToken}` },
+  })
+  assert.equal(response.status, 403)
 })
 
 test('tenant validation requires key fields', async () => {

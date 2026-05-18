@@ -9,6 +9,8 @@ All notable changes to this project will be documented here.
 - Local demo authentication with seeded role-based users.
 - Bearer-token protection for business API endpoints.
 - Role-aware frontend navigation and login screen.
+- Audit logs for auth, CRUD, backup, and restore actions.
+- Manager backup/restore endpoints and Settings UI.
 - Backend validation for required fields, enum values, dates, positive numbers, references, unique Ejar numbers, and payment-contract alignment.
 - Backend delete protection for related records.
 - Backend test suite using Node's built-in test runner.

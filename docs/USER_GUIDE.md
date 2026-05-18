@@ -30,6 +30,17 @@ demo12345
 
 Different roles see different sections and permissions. For example, a maintenance user focuses on maintenance requests, while the manager can access everything.
 
+## Manager Tools
+
+Managers can open `الإعدادات` to see:
+
+- Recent activity logs.
+- Local SQLite backup files.
+- A button to create a backup.
+- A restore action for existing backups.
+
+When restoring a backup, the local API must be started again after the restore finishes.
+
 ## Main Sections
 
 - `الرئيسية`: management dashboard with occupancy, annual rent, late payments, and alerts.

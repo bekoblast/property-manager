@@ -14,6 +14,7 @@ Arabic RTL web app for managing company properties in Saudi Arabia. The app cove
 - Local Express + SQLite API.
 - API mode with browser-local fallback when the API is offline.
 - Local demo authentication with manager, accountant, leasing, maintenance, and viewer roles.
+- Manager audit log and local SQLite backup/restore tools.
 
 ## Screenshots
 

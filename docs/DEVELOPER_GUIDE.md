@@ -156,6 +156,39 @@ The API validates:
 
 Delete protection blocks removing parent records that still have related children, such as properties with units or contracts with payments.
 
+## Audit Logs
+
+The backend writes audit logs for:
+
+- Login and logout.
+- Create, update, and delete operations.
+- Backup creation.
+- Backup restore requests.
+
+Managers can read recent audit logs through:
+
+```text
+GET /api/audit-logs
+```
+
+The Settings screen also shows recent audit activity for manager users.
+
+## Backup And Restore
+
+The local API stores SQLite backups in ignored `server/data/backups/` by default.
+
+Endpoints:
+
+```text
+GET  /api/backups
+POST /api/backups
+POST /api/backups/:name/restore
+```
+
+Only managers can use backup endpoints.
+
+Restore behavior is intentionally conservative for SQLite: the API responds with `restartRequired: true`, copies the selected backup over the active database file, and exits. Start `npm run api` again after restore.
+
 ## Main Resources
 
 - `properties`: buildings or property groups.

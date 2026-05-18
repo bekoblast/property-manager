@@ -8,6 +8,17 @@ create table if not exists users (
   active integer not null default 1
 );
 
+create table if not exists audit_logs (
+  id text primary key,
+  userId text,
+  userEmail text,
+  action text not null,
+  resource text not null,
+  recordId text,
+  createdAt text not null,
+  details text
+);
+
 create table if not exists properties (
   id text primary key,
   name text not null,

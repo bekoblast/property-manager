@@ -34,8 +34,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { apiDelete, apiHealth, apiList, apiLogin, apiLogout, apiMe, apiSave, getAuthToken, setAuthToken } from './api'
-import type { ApiResource, AuthUser, UserRole } from './api'
+import { apiAuditLogs, apiBackups, apiCreateBackup, apiDelete, apiHealth, apiList, apiLogin, apiLogout, apiMe, apiRestoreBackup, apiSave, getAuthToken, setAuthToken } from './api'
+import type { ApiResource, AuditLog, AuthUser, BackupFile, UserRole } from './api'
 import {
   money,
   number,
@@ -100,6 +100,9 @@ function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [loginForm, setLoginForm] = useState<LoginForm>({ email: 'manager@aqarati.local', password: 'demo12345' })
   const [loginError, setLoginError] = useState('')
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
+  const [backups, setBackups] = useState<BackupFile[]>([])
+  const [adminMessage, setAdminMessage] = useState('')
   const [properties, setProperties] = useStoredState<Property>('aqarati.properties', seedProperties)
   const [units, setUnits] = useStoredState<Unit>('aqarati.units', seedUnits)
   const [tenants, setTenants] = useStoredState<Tenant>('aqarati.tenants', seedTenants)
@@ -169,6 +172,22 @@ function App() {
   const allowedViews = useMemo(() => (authUser ? roleViews[authUser.role] : navItems.map((item) => item.id)), [authUser])
   const visibleNavItems = useMemo(() => navItems.filter((item) => allowedViews.includes(item.id)), [allowedViews])
 
+  useEffect(() => {
+    if (!apiOnline || authUser?.role !== 'manager' || activeView !== 'settings') return
+
+    async function loadAdminData() {
+      try {
+        const [logs, nextBackups] = await Promise.all([apiAuditLogs(), apiBackups()])
+        setAuditLogs(logs)
+        setBackups(nextBackups)
+      } catch {
+        setAdminMessage('تعذر تحميل بيانات الإدارة.')
+      }
+    }
+
+    loadAdminData()
+  }, [activeView, apiOnline, authUser])
+
   const propertyName = (id: string) => properties.find((property) => property.id === id)?.name || 'غير محدد'
   const tenantName = (id: string) => tenants.find((tenant) => tenant.id === id)?.name || 'بدون مستأجر'
   const unitLabel = (id: string) => {
@@ -236,6 +255,31 @@ function App() {
     setAuthUser(null)
     setActiveView('dashboard')
     setSyncMessage(apiOnline ? 'تسجيل الدخول مطلوب' : 'وضع محلي')
+  }
+
+  const createBackup = async () => {
+    setAdminMessage('')
+    try {
+      const backup = await apiCreateBackup()
+      setBackups((current) => [backup, ...current.filter((item) => item.name !== backup.name)])
+      const logs = await apiAuditLogs()
+      setAuditLogs(logs)
+      setAdminMessage('تم إنشاء النسخة الاحتياطية.')
+    } catch {
+      setAdminMessage('تعذر إنشاء النسخة الاحتياطية.')
+    }
+  }
+
+  const restoreBackup = async (name: string) => {
+    setAdminMessage('')
+    try {
+      await apiRestoreBackup(name)
+      setApiOnline(false)
+      setSyncMessage('أعد تشغيل API بعد الاستعادة')
+      setAdminMessage('تمت جدولة الاستعادة. أعد تشغيل API ثم سجل الدخول مرة أخرى.')
+    } catch {
+      setAdminMessage('تعذر استعادة النسخة الاحتياطية.')
+    }
   }
 
   const openModal = (kind: ModalKind, id?: string) => {
@@ -714,6 +758,59 @@ function App() {
           <Metric label="العقود" value="متوافق مع رقم إيجار" />
           <Metric label="اللغة" value="العربية واتجاه RTL" />
         </div>
+        {authUser?.role === 'manager' && (
+          <div className="admin-grid">
+            <section className="admin-box">
+              <div className="panel-head">
+                <div>
+                  <h2>النسخ الاحتياطي</h2>
+                  <p>إنشاء واستعادة نسخ SQLite المحلية.</p>
+                </div>
+                <button className="primary-action" onClick={createBackup}>إنشاء نسخة</button>
+              </div>
+              {adminMessage && <p className="empty-state">{adminMessage}</p>}
+              <div className="report-list">
+                {backups.length === 0 && <p className="empty-state">لا توجد نسخ احتياطية بعد.</p>}
+                {backups.map((backup) => (
+                  <div className="unit-card admin-row" key={backup.name}>
+                    <div>
+                      <strong>{backup.name}</strong>
+                      <span>{new Date(backup.createdAt).toLocaleString('ar-SA')}</span>
+                    </div>
+                    <div>
+                      <span>الحجم</span>
+                      <b>{number.format(Math.round(backup.size / 1024))} KB</b>
+                    </div>
+                    <div>
+                      <button className="secondary-action" onClick={() => restoreBackup(backup.name)}>استعادة</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section className="admin-box">
+              <PanelHead title="سجل النشاط" subtitle="آخر العمليات المهمة في النظام" />
+              <div className="report-list">
+                {auditLogs.slice(0, 8).map((log) => (
+                  <div className="unit-card admin-row" key={log.id}>
+                    <div>
+                      <strong>{log.action} / {log.resource}</strong>
+                      <span>{log.userEmail || 'النظام'}</span>
+                    </div>
+                    <div>
+                      <span>السجل</span>
+                      <b>{log.recordId || '-'}</b>
+                    </div>
+                    <div>
+                      <span>الوقت</span>
+                      <b>{new Date(log.createdAt).toLocaleString('ar-SA')}</b>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
       </section>
     )
   }

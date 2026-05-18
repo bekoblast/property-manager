@@ -598,6 +598,23 @@ td span {
   margin-top: 16px;
 }
 
+.admin-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.admin-box {
+  border-top: 1px solid #edf1ee;
+  padding-top: 18px;
+}
+
+.admin-row {
+  grid-template-columns: 1.4fr 0.8fr 0.8fr;
+  align-items: center;
+}
+
 .unit-card {
   border: 1px solid #e4ebe6;
   border-radius: 8px;

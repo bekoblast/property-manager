@@ -4,6 +4,8 @@ export type ApiResource = 'properties' | 'units' | 'tenants' | 'contracts' | 'pa
 export type UserRole = 'manager' | 'accountant' | 'leasing' | 'maintenance' | 'viewer'
 export type AuthUser = { id: string; name: string; email: string; role: UserRole; active: boolean }
 export type LoginResult = { token: string; user: AuthUser }
+export type AuditLog = { id: string; userId: string; userEmail: string; action: string; resource: string; recordId: string; createdAt: string; details: string }
+export type BackupFile = { name: string; size: number; createdAt: string }
 type ApiRequestInit = RequestInit & { skipAuth?: boolean }
 
 let authToken = localStorage.getItem('aqarati.authToken') || ''
@@ -41,6 +43,22 @@ export async function apiLogout(): Promise<void> {
   } finally {
     setAuthToken('')
   }
+}
+
+export async function apiAuditLogs(): Promise<AuditLog[]> {
+  return request<AuditLog[]>('/audit-logs')
+}
+
+export async function apiBackups(): Promise<BackupFile[]> {
+  return request<BackupFile[]>('/backups')
+}
+
+export async function apiCreateBackup(): Promise<BackupFile> {
+  return request<BackupFile>('/backups', { method: 'POST' })
+}
+
+export async function apiRestoreBackup(name: string): Promise<{ restored: string; restartRequired: boolean }> {
+  return request<{ restored: string; restartRequired: boolean }>(`/backups/${name}/restore`, { method: 'POST' })
 }
 
 export async function apiList<T>(resource: ApiResource): Promise<T[]> {
