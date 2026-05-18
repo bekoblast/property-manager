@@ -34,8 +34,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { apiDelete, apiHealth, apiList, apiSave } from './api'
-import type { ApiResource } from './api'
+import { apiDelete, apiHealth, apiList, apiLogin, apiLogout, apiMe, apiSave, getAuthToken, setAuthToken } from './api'
+import type { ApiResource, AuthUser, UserRole } from './api'
 import {
   money,
   number,
@@ -68,6 +68,7 @@ import './App.css'
 type ModalKind = 'property' | 'unit' | 'tenant' | 'contract' | 'payment' | 'maintenance'
 type ModalState = { kind: ModalKind; id?: string } | null
 type FormValues = Record<string, string>
+type LoginForm = { email: string; password: string }
 
 const navItems: Array<{ id: View; label: string; icon: LucideIcon }> = [
   { id: 'dashboard', label: 'الرئيسية', icon: Home },
@@ -81,6 +82,14 @@ const navItems: Array<{ id: View; label: string; icon: LucideIcon }> = [
   { id: 'settings', label: 'الإعدادات', icon: Settings },
 ]
 
+const roleViews: Record<UserRole, View[]> = {
+  manager: ['dashboard', 'properties', 'units', 'tenants', 'contracts', 'payments', 'maintenance', 'reports', 'settings'],
+  accountant: ['dashboard', 'properties', 'units', 'tenants', 'contracts', 'payments', 'reports'],
+  leasing: ['dashboard', 'properties', 'units', 'tenants', 'contracts', 'reports'],
+  maintenance: ['dashboard', 'units', 'maintenance'],
+  viewer: ['dashboard', 'properties', 'units', 'tenants', 'contracts', 'payments', 'maintenance', 'reports'],
+}
+
 function App() {
   const [activeView, setActiveView] = useState<View>('dashboard')
   const [query, setQuery] = useState('')
@@ -88,6 +97,9 @@ function App() {
   const [form, setForm] = useState<FormValues>({})
   const [apiOnline, setApiOnline] = useState(false)
   const [syncMessage, setSyncMessage] = useState('محلي')
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  const [loginForm, setLoginForm] = useState<LoginForm>({ email: 'manager@aqarati.local', password: 'demo12345' })
+  const [loginError, setLoginError] = useState('')
   const [properties, setProperties] = useStoredState<Property>('aqarati.properties', seedProperties)
   const [units, setUnits] = useStoredState<Unit>('aqarati.units', seedUnits)
   const [tenants, setTenants] = useStoredState<Tenant>('aqarati.tenants', seedTenants)
@@ -105,6 +117,23 @@ function App() {
       setSyncMessage(online ? 'متصل بالـ API' : 'وضع محلي')
 
       if (!online) return
+
+      if (getAuthToken()) {
+        try {
+          const user = await apiMe()
+          if (!active) return
+          setAuthUser(user)
+        } catch {
+          setAuthToken('')
+          if (!active) return
+          setAuthUser(null)
+          setSyncMessage('تسجيل الدخول مطلوب')
+          return
+        }
+      } else {
+        setSyncMessage('تسجيل الدخول مطلوب')
+        return
+      }
 
       try {
         const [nextProperties, nextUnits, nextTenants, nextContracts, nextPayments, nextMaintenance] = await Promise.all([
@@ -136,6 +165,9 @@ function App() {
       active = false
     }
   }, [setContracts, setMaintenance, setPayments, setProperties, setTenants, setUnits])
+
+  const allowedViews = useMemo(() => (authUser ? roleViews[authUser.role] : navItems.map((item) => item.id)), [authUser])
+  const visibleNavItems = useMemo(() => navItems.filter((item) => allowedViews.includes(item.id)), [allowedViews])
 
   const propertyName = (id: string) => properties.find((property) => property.id === id)?.name || 'غير محدد'
   const tenantName = (id: string) => tenants.find((tenant) => tenant.id === id)?.name || 'بدون مستأجر'
@@ -170,6 +202,41 @@ function App() {
   ]
 
   const setField = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }))
+
+  const submitLogin = async (event: FormEvent) => {
+    event.preventDefault()
+    setLoginError('')
+
+    try {
+      const result = await apiLogin(loginForm.email, loginForm.password)
+      setAuthUser(result.user)
+      setActiveView(roleViews[result.user.role][0] || 'dashboard')
+      setSyncMessage('متصل بالـ API')
+      const [nextProperties, nextUnits, nextTenants, nextContracts, nextPayments, nextMaintenance] = await Promise.all([
+        apiList<Property>('properties'),
+        apiList<Unit>('units'),
+        apiList<Tenant>('tenants'),
+        apiList<Contract>('contracts'),
+        apiList<Payment>('payments'),
+        apiList<Maintenance>('maintenance'),
+      ])
+      setProperties(nextProperties)
+      setUnits(nextUnits)
+      setTenants(nextTenants)
+      setContracts(nextContracts)
+      setPayments(nextPayments)
+      setMaintenance(nextMaintenance)
+    } catch {
+      setLoginError('بيانات الدخول غير صحيحة.')
+    }
+  }
+
+  const logout = async () => {
+    await apiLogout()
+    setAuthUser(null)
+    setActiveView('dashboard')
+    setSyncMessage(apiOnline ? 'تسجيل الدخول مطلوب' : 'وضع محلي')
+  }
 
   const openModal = (kind: ModalKind, id?: string) => {
     const existing = getExisting(kind, id)
@@ -345,6 +412,41 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
+  if (apiOnline && !authUser) {
+    return (
+      <main className="login-screen" dir="rtl">
+        <form className="login-panel" onSubmit={submitLogin}>
+          <div className="brand login-brand">
+            <div className="brand-mark">ع</div>
+            <div>
+              <strong>عقارتي</strong>
+              <span>إدارة الأملاك والإيجارات</span>
+            </div>
+          </div>
+          <div>
+            <p className="eyebrow">تسجيل الدخول</p>
+            <h1>مرحباً بك</h1>
+            <p>استخدم حساب تجريبي للدخول إلى النظام المحلي.</p>
+          </div>
+          <label className="field">
+            <span>البريد الإلكتروني</span>
+            <input name="email" value={loginForm.email} onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))} />
+          </label>
+          <label className="field">
+            <span>كلمة المرور</span>
+            <input name="password" type="password" value={loginForm.password} onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))} />
+          </label>
+          {loginError && <p className="login-error">{loginError}</p>}
+          <button className="primary-action" type="submit">دخول</button>
+          <div className="login-help">
+            <span>حساب المدير: manager@aqarati.local</span>
+            <span>كلمة المرور: demo12345</span>
+          </div>
+        </form>
+      </main>
+    )
+  }
+
   return (
     <div className="app-shell" dir="rtl">
       <aside className="sidebar">
@@ -356,7 +458,7 @@ function App() {
           </div>
         </div>
         <nav aria-label="التنقل الرئيسي">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon
             return (
               <button key={item.id} className={`nav-item ${activeView === item.id ? 'active' : ''}`} onClick={() => setActiveView(item.id)}>
@@ -375,6 +477,7 @@ function App() {
             <h1>{navItems.find((item) => item.id === activeView)?.label}</h1>
           </div>
           <div className="toolbar">
+            {authUser && <button className="secondary-action" onClick={logout}>خروج</button>}
             <span className="pill">{syncMessage}</span>
             <label className="search">
               <Search size={17} />

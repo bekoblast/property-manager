@@ -1,3 +1,13 @@
+create table if not exists users (
+  id text primary key,
+  name text not null,
+  email text not null unique,
+  role text not null,
+  passwordHash text not null,
+  passwordSalt text not null,
+  active integer not null default 1
+);
+
 create table if not exists properties (
   id text primary key,
   name text not null,

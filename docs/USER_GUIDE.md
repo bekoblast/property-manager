@@ -17,6 +17,19 @@ The top status badge shows one of two modes:
 
 For real company work, use API mode.
 
+## Login
+
+When the API is running, the app requires login.
+
+Demo manager account:
+
+```text
+manager@aqarati.local
+demo12345
+```
+
+Different roles see different sections and permissions. For example, a maintenance user focuses on maintenance requests, while the manager can access everything.
+
 ## Main Sections
 
 - `الرئيسية`: management dashboard with occupancy, annual rent, late payments, and alerts.

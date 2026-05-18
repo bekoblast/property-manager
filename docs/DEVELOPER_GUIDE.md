@@ -13,6 +13,8 @@ React UI -> src/api.ts -> Express API -> SQLite
 
 The frontend tries to connect to the API at `VITE_API_BASE_URL`. If the API is offline, it continues in local browser mode through `localStorage`.
 
+When the API is online, users must log in before business data is loaded.
+
 ## Folder Structure
 
 ```text
@@ -110,8 +112,35 @@ When the API is offline:
 - Runs `server/schema.sql`.
 - Seeds the database on first run.
 - Exposes `/api/health`, `/api/dashboard`, and CRUD endpoints.
+- Exposes `/api/auth/login`, `/api/auth/logout`, and `/api/auth/me`.
+- Requires bearer-token authentication for business endpoints.
+- Applies role permissions for write operations.
 
 The current backend is intentionally simple. It is a local development bridge, not the final production backend.
+
+## Demo Users
+
+All demo users use this password:
+
+```text
+demo12345
+```
+
+| Email | Role |
+| --- | --- |
+| `manager@aqarati.local` | manager |
+| `accountant@aqarati.local` | accountant |
+| `leasing@aqarati.local` | leasing |
+| `maintenance@aqarati.local` | maintenance |
+| `viewer@aqarati.local` | viewer |
+
+Role summary:
+
+- `manager`: full access.
+- `accountant`: can write payments.
+- `leasing`: can write properties, units, tenants, and contracts.
+- `maintenance`: can write maintenance requests.
+- `viewer`: read-only.
 
 ## Backend Validation
 

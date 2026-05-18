@@ -1,7 +1,7 @@
 import cors from 'cors'
 import express from 'express'
 import Database from 'better-sqlite3'
-import { randomUUID } from 'node:crypto'
+import { pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,11 +21,13 @@ db.exec(readFileSync(join(__dirname, 'schema.sql'), 'utf8'))
 
 const app = express()
 const port = Number(process.env.API_PORT || 4000)
+const sessions = new Map()
 
 app.use(cors({ origin: ['http://127.0.0.1:3000', 'http://localhost:3000'] }))
 app.use(express.json())
 
 const tables = {
+  users: ['id', 'name', 'email', 'role', 'passwordHash', 'passwordSalt', 'active'],
   properties: ['id', 'name', 'city', 'district', 'type', 'units', 'manager'],
   units: ['id', 'propertyId', 'number', 'type', 'status', 'rent', 'tenantId', 'ejar', 'contractEnd', 'nextDue', 'paid', 'overdue', 'vat'],
   tenants: ['id', 'name', 'mobile', 'nationalId', 'email'],
@@ -35,6 +37,7 @@ const tables = {
 }
 
 const requiredFields = {
+  users: ['name', 'email', 'role'],
   properties: ['name', 'city', 'district', 'type', 'manager'],
   units: ['propertyId', 'number', 'type', 'status'],
   tenants: ['name', 'mobile', 'nationalId'],
@@ -44,6 +47,7 @@ const requiredFields = {
 }
 
 const enums = {
+  users: { role: ['manager', 'accountant', 'leasing', 'maintenance', 'viewer'] },
   properties: { type: ['سكني', 'تجاري', 'مختلط'] },
   units: { type: ['شقة', 'محل'], status: ['مؤجرة', 'شاغرة', 'صيانة'] },
   contracts: { frequency: ['شهري', 'ربع سنوي', 'سنوي'], status: ['نشط', 'ينتهي قريباً', 'منتهي'] },
@@ -59,7 +63,22 @@ const numericFields = {
   maintenance: ['cost'],
 }
 
+const rolePermissions = {
+  manager: { read: ['*'], write: ['*'] },
+  accountant: { read: ['dashboard', 'properties', 'units', 'tenants', 'contracts', 'payments', 'maintenance'], write: ['payments'] },
+  leasing: { read: ['dashboard', 'properties', 'units', 'tenants', 'contracts', 'payments', 'maintenance'], write: ['properties', 'units', 'tenants', 'contracts'] },
+  maintenance: { read: ['dashboard', 'properties', 'units', 'tenants', 'contracts', 'payments', 'maintenance'], write: ['maintenance'] },
+  viewer: { read: ['dashboard', 'properties', 'units', 'tenants', 'contracts', 'payments', 'maintenance'], write: [] },
+}
+
 const seed = {
+  users: [
+    { id: 'user-manager', name: 'مدير النظام', email: 'manager@aqarati.local', role: 'manager', password: 'demo12345', active: 1 },
+    { id: 'user-accountant', name: 'المحاسب', email: 'accountant@aqarati.local', role: 'accountant', password: 'demo12345', active: 1 },
+    { id: 'user-leasing', name: 'مسؤول التأجير', email: 'leasing@aqarati.local', role: 'leasing', password: 'demo12345', active: 1 },
+    { id: 'user-maintenance', name: 'مسؤول الصيانة', email: 'maintenance@aqarati.local', role: 'maintenance', password: 'demo12345', active: 1 },
+    { id: 'user-viewer', name: 'مشاهد التقارير', email: 'viewer@aqarati.local', role: 'viewer', password: 'demo12345', active: 1 },
+  ],
   properties: [
     { id: 'p1', name: 'برج الندى', city: 'الرياض', district: 'العليا', type: 'مختلط', units: 12, manager: 'خالد السالم' },
     { id: 'p2', name: 'مجمع الروضة', city: 'جدة', district: 'الروضة', type: 'سكني', units: 18, manager: 'نورة العتيبي' },
@@ -94,7 +113,30 @@ app.get('/api/health', (_request, response) => {
   response.json({ ok: true, database: dbPath })
 })
 
-app.get('/api/dashboard', (_request, response) => {
+app.post('/api/auth/login', (request, response) => {
+  const email = String(request.body.email || '').trim().toLowerCase()
+  const password = String(request.body.password || '')
+  const user = db.prepare('select * from users where lower(email) = ? and active = 1').get(email)
+
+  if (!user || !verifyPassword(password, user.passwordSalt, user.passwordHash)) {
+    return response.status(401).json({ message: 'Invalid email or password' })
+  }
+
+  const token = randomBytes(32).toString('hex')
+  sessions.set(token, publicUser(user))
+  response.json({ token, user: publicUser(user) })
+})
+
+app.post('/api/auth/logout', authenticate, (request, response) => {
+  sessions.delete(request.token)
+  response.status(204).send()
+})
+
+app.get('/api/auth/me', authenticate, (request, response) => {
+  response.json({ user: request.user })
+})
+
+app.get('/api/dashboard', authenticate, authorize('dashboard', 'read'), (_request, response) => {
   const units = list('units')
   const payments = list('payments')
   const contracts = list('contracts')
@@ -117,35 +159,35 @@ app.get('/api/dashboard', (_request, response) => {
 })
 
 for (const table of Object.keys(tables)) {
-  app.get(`/api/${table}`, (_request, response) => {
-    response.json(list(table))
+  app.get(`/api/${table}`, authenticate, authorize(table, 'read'), (_request, response) => {
+    response.json(list(table).map((item) => serialize(table, item)))
   })
 
-  app.get(`/api/${table}/:id`, (request, response) => {
+  app.get(`/api/${table}/:id`, authenticate, authorize(table, 'read'), (request, response) => {
     const item = find(table, request.params.id)
     if (!item) return response.status(404).json({ message: 'Record not found' })
-    response.json(item)
+    response.json(serialize(table, item))
   })
 
-  app.post(`/api/${table}`, (request, response) => {
+  app.post(`/api/${table}`, authenticate, authorize(table, 'write'), (request, response) => {
     const item = normalize(table, { ...request.body, id: request.body.id || randomUUID() })
     validate(table, item)
     insert(table, item)
     applySideEffects(table, item)
-    response.status(201).json(find(table, item.id))
+    response.status(201).json(serialize(table, find(table, item.id)))
   })
 
-  app.patch(`/api/${table}/:id`, (request, response) => {
+  app.patch(`/api/${table}/:id`, authenticate, authorize(table, 'write'), (request, response) => {
     const existing = find(table, request.params.id)
     if (!existing) return response.status(404).json({ message: 'Record not found' })
     const item = normalize(table, { ...existing, ...request.body, id: request.params.id })
     validate(table, item)
     update(table, item)
     applySideEffects(table, item)
-    response.json(find(table, item.id))
+    response.json(serialize(table, find(table, item.id)))
   })
 
-  app.delete(`/api/${table}/:id`, (request, response) => {
+  app.delete(`/api/${table}/:id`, authenticate, authorize(table, 'write'), (request, response) => {
     const existing = find(table, request.params.id)
     if (!existing) return response.status(404).json({ message: 'Record not found' })
     protectDelete(table, request.params.id)
@@ -163,12 +205,18 @@ app.listen(port, () => {
 })
 
 function seedDatabase() {
+  const userCount = db.prepare('select count(*) as count from users').get().count
+  if (userCount === 0) {
+    seed.users.forEach((row) => insert('users', normalize('users', row)))
+  }
+
   const count = db.prepare('select count(*) as count from properties').get().count
   if (count > 0) return
 
   const transaction = db.transaction(() => {
     for (const [table, rows] of Object.entries(seed)) {
-      rows.forEach((row) => insert(table, row))
+      if (table === 'users') continue
+      rows.forEach((row) => insert(table, normalize(table, row)))
     }
   })
   transaction()
@@ -221,6 +269,11 @@ function validate(table, row) {
   if ('start' in row && 'end' in row && row.end < row.start) throw httpError(422, 'end must be after start')
 
   if (table === 'units') requireRecord('properties', row.propertyId, 'propertyId')
+  if (table === 'users') {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) throw httpError(422, 'email must be valid')
+    const existing = db.prepare('select id from users where lower(email) = lower(?) and id != ?').get(row.email, row.id)
+    if (existing) throw httpError(409, 'email must be unique')
+  }
   if (table === 'contracts') {
     requireRecord('units', row.unitId, 'unitId')
     requireRecord('tenants', row.tenantId, 'tenantId')
@@ -271,13 +324,58 @@ function normalize(table, row) {
     if (tables[table].includes(column)) next[column] = Number(next[column] || 0)
   }
   if ('vat' in next) next.vat = next.vat === true || next.vat === 'true' || next.vat === 1 ? 1 : 0
+  if ('active' in next) next.active = next.active === false || next.active === 'false' || next.active === 0 ? 0 : 1
+  if (table === 'users') {
+    next.email = String(next.email || '').trim().toLowerCase()
+    if (next.password) {
+      const credentials = hashPassword(String(next.password))
+      next.passwordSalt = credentials.salt
+      next.passwordHash = credentials.hash
+    }
+    if (!next.passwordSalt || !next.passwordHash) {
+      throw httpError(422, 'password is required')
+    }
+  }
   return Object.fromEntries(tables[table].map((column) => [column, next[column] ?? '']))
 }
 
 function normalizeFromDb(_table, row) {
   const next = { ...row }
   if ('vat' in next) next.vat = Boolean(next.vat)
+  if ('active' in next) next.active = Boolean(next.active)
   return next
+}
+
+function serialize(table, item) {
+  if (table !== 'users') return item
+  return publicUser(item)
+}
+
+function authenticate(request, response, next) {
+  const header = request.get('authorization') || ''
+  const token = header.startsWith('Bearer ') ? header.slice(7) : ''
+  const user = sessions.get(token)
+
+  if (!user) {
+    return response.status(401).json({ message: 'Authentication required' })
+  }
+
+  request.token = token
+  request.user = user
+  next()
+}
+
+function authorize(resource, action) {
+  return (request, response, next) => {
+    const permissions = rolePermissions[request.user.role]
+    const allowed = permissions?.[action] || []
+
+    if (!allowed.includes('*') && !allowed.includes(resource)) {
+      return response.status(403).json({ message: 'Permission denied' })
+    }
+
+    next()
+  }
 }
 
 function requireRecord(table, id, field) {
@@ -294,4 +392,27 @@ function httpError(status, message) {
   const error = new Error(message)
   error.status = status
   return error
+}
+
+function hashPassword(password, salt = randomBytes(16).toString('hex')) {
+  return {
+    salt,
+    hash: pbkdf2Sync(password, salt, 100000, 32, 'sha256').toString('hex'),
+  }
+}
+
+function verifyPassword(password, salt, expectedHash) {
+  const actual = Buffer.from(hashPassword(password, salt).hash, 'hex')
+  const expected = Buffer.from(expectedHash, 'hex')
+  return actual.length === expected.length && timingSafeEqual(actual, expected)
+}
+
+function publicUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    active: Boolean(user.active),
+  }
 }

@@ -9,6 +9,8 @@ const port = 49124
 const baseUrl = `http://127.0.0.1:${port}/api`
 let child
 let tempDir
+let managerToken
+let viewerToken
 
 before(async () => {
   tempDir = await mkdtemp(join(tmpdir(), 'aqarati-api-'))
@@ -23,15 +25,20 @@ before(async () => {
   })
 
   await waitForApi()
+  managerToken = await login('manager@aqarati.local')
+  viewerToken = await login('viewer@aqarati.local')
 })
 
 after(async () => {
-  child?.kill()
+  if (child && !child.killed) {
+    child.kill()
+    await new Promise((resolve) => child.once('exit', resolve))
+  }
   await rm(tempDir, { recursive: true, force: true })
 })
 
 test('health and dashboard endpoints respond', async () => {
-  const health = await request('/health')
+  const health = await publicRequest('/health')
   assert.equal(health.ok, true)
 
   const dashboard = await request('/dashboard')
@@ -40,10 +47,29 @@ test('health and dashboard endpoints respond', async () => {
   assert.equal(dashboard.occupancy, 67)
 })
 
+test('business endpoints require authentication', async () => {
+  const response = await fetch(`${baseUrl}/properties`)
+  assert.equal(response.status, 401)
+})
+
+test('viewer role can read but cannot write', async () => {
+  const listResponse = await fetch(`${baseUrl}/properties`, {
+    headers: { Authorization: `Bearer ${viewerToken}` },
+  })
+  assert.equal(listResponse.status, 200)
+
+  const writeResponse = await fetch(`${baseUrl}/properties`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${viewerToken}` },
+    body: JSON.stringify({ name: 'Blocked', city: 'الرياض', district: 'النرجس', type: 'سكني', manager: 'Viewer' }),
+  })
+  assert.equal(writeResponse.status, 403)
+})
+
 test('tenant validation requires key fields', async () => {
   const response = await fetch(`${baseUrl}/tenants`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${managerToken}` },
     body: JSON.stringify({ mobile: '0550000000', nationalId: '1234567890' }),
   })
 
@@ -54,7 +80,7 @@ test('tenant validation requires key fields', async () => {
 test('unit validation rejects missing property references', async () => {
   const response = await fetch(`${baseUrl}/units`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${managerToken}` },
     body: JSON.stringify({
       propertyId: 'missing',
       number: 'QA-404',
@@ -71,7 +97,7 @@ test('unit validation rejects missing property references', async () => {
 test('contract Ejar number must be unique', async () => {
   const response = await fetch(`${baseUrl}/contracts`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${managerToken}` },
     body: JSON.stringify({
       ejar: 'EJ-2026-1001',
       unitId: 'u3',
@@ -92,7 +118,7 @@ test('contract Ejar number must be unique', async () => {
 test('payment must match its contract unit and tenant', async () => {
   const response = await fetch(`${baseUrl}/payments`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${managerToken}` },
     body: JSON.stringify({
       contractId: 'c1',
       unitId: 'u2',
@@ -108,7 +134,7 @@ test('payment must match its contract unit and tenant', async () => {
 })
 
 test('delete protection blocks property with units', async () => {
-  const response = await fetch(`${baseUrl}/properties/p1`, { method: 'DELETE' })
+  const response = await fetch(`${baseUrl}/properties/p1`, { method: 'DELETE', headers: { Authorization: `Bearer ${managerToken}` } })
   assert.equal(response.status, 409)
   assert.match((await response.json()).message, /related units/)
 })
@@ -142,10 +168,29 @@ test('contract save syncs linked unit details', async () => {
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     ...options,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${managerToken}`, ...options.headers },
+  })
+  assert.ok(response.ok, `${path} returned ${response.status}`)
+  return response.json()
+}
+
+async function publicRequest(path, options = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...options,
     headers: { 'Content-Type': 'application/json', ...options.headers },
   })
   assert.ok(response.ok, `${path} returned ${response.status}`)
   return response.json()
+}
+
+async function login(email) {
+  const response = await fetch(`${baseUrl}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'demo12345' }),
+  })
+  assert.equal(response.status, 200)
+  return (await response.json()).token
 }
 
 async function waitForApi() {

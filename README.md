@@ -13,6 +13,7 @@ Arabic RTL web app for managing company properties in Saudi Arabia. The app cove
 - Excel and PDF report export.
 - Local Express + SQLite API.
 - API mode with browser-local fallback when the API is offline.
+- Local demo authentication with manager, accountant, leasing, maintenance, and viewer roles.
 
 ## Screenshots
 
@@ -68,6 +69,13 @@ The API runs at:
 
 ```text
 http://127.0.0.1:4000/api/health
+```
+
+Demo login:
+
+```text
+manager@aqarati.local
+demo12345
 ```
 
 Optional local environment:
