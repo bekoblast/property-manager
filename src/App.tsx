@@ -868,7 +868,7 @@ function App() {
       text('name', 'اسم العقار'), text('city', 'المدينة'), text('district', 'الحي'), select('type', 'النوع', ['سكني', 'تجاري', 'مختلط']), numberField('units', 'عدد الوحدات'), text('manager', 'مدير العقار'),
     ]
     if (kind === 'unit') return [
-      selectFrom('propertyId', 'العقار', propertyOptions), text('number', 'رقم الوحدة'), select('type', 'نوع الوحدة', ['شقة', 'محل']), select('status', 'الحالة', ['مؤجرة', 'شاغرة', 'صيانة']), numberField('rent', 'الإيجار السنوي'), selectFrom('tenantId', 'المستأجر', tenantOptions), text('ejar', 'رقم إيجار'), text('contractEnd', 'نهاية العقد'), text('nextDue', 'الاستحقاق القادم'), numberField('paid', 'المدفوع'), numberField('overdue', 'المتأخر'), selectFrom('vat', 'ضريبة القيمة المضافة', [{ value: 'false', label: 'لا' }, { value: 'true', label: 'نعم' }]),
+      selectFrom('propertyId', 'العقار', propertyOptions), text('number', 'رقم الوحدة'), select('type', 'نوع الوحدة', ['شقة', 'محل']), select('status', 'الحالة', ['مؤجرة', 'شاغرة', 'صيانة']), numberField('rent', 'الإيجار السنوي'), selectFrom('tenantId', 'المستأجر', tenantOptions, false), text('ejar', 'رقم إيجار'), text('contractEnd', 'نهاية العقد'), text('nextDue', 'الاستحقاق القادم'), numberField('paid', 'المدفوع'), numberField('overdue', 'المتأخر'), selectFrom('vat', 'ضريبة القيمة المضافة', [{ value: 'false', label: 'لا' }, { value: 'true', label: 'نعم' }]),
     ]
     if (kind === 'tenant') return [text('name', 'الاسم'), text('mobile', 'الجوال'), text('nationalId', 'الهوية / السجل'), text('email', 'البريد الإلكتروني')]
     if (kind === 'contract') return [
@@ -895,7 +895,7 @@ const modalTitles: Record<ModalKind, string> = {
 const text = (name: string, label: string): Field => ({ name, label, type: 'text', required: true })
 const numberField = (name: string, label: string): Field => ({ name, label, type: 'number', required: true })
 const select = (name: string, label: string, values: string[]): Field => ({ name, label, type: 'select', required: true, options: values.map((value) => ({ value, label: value })) })
-const selectFrom = (name: string, label: string, options: Array<{ value: string; label: string }>): Field => ({ name, label, type: 'select', required: true, options })
+const selectFrom = (name: string, label: string, options: Array<{ value: string; label: string }>, required = true): Field => ({ name, label, type: 'select', required, options })
 
 function PanelHead({ title, subtitle, action, onAction }: { title: string; subtitle: string; action?: string; onAction?: () => void }) {
   return (
