@@ -41,6 +41,7 @@ after(async () => {
 test('health and dashboard endpoints respond', async () => {
   const health = await publicRequest('/health')
   assert.equal(health.ok, true)
+  assert.deepEqual(health.migrations, ['001_initial.sql'])
 
   const dashboard = await request('/dashboard')
   assert.equal(dashboard.properties, 2)

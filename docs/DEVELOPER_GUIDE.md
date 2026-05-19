@@ -26,6 +26,7 @@ docs/
 server/
   index.mjs                Express API and CRUD routes
   schema.sql               Local SQLite schema
+  migrations/              Versioned SQLite migrations
   data/                    Ignored local SQLite database files
 src/
   api.ts                   Frontend API client
@@ -109,7 +110,7 @@ When the API is offline:
 `server/index.mjs`:
 
 - Creates `server/data/aqarati.db` if missing.
-- Runs `server/schema.sql`.
+- Runs any pending files from `server/migrations/`.
 - Seeds the database on first run.
 - Exposes `/api/health`, `/api/dashboard`, and CRUD endpoints.
 - Exposes `/api/auth/login`, `/api/auth/logout`, and `/api/auth/me`.
@@ -117,6 +118,28 @@ When the API is offline:
 - Applies role permissions for write operations.
 
 The current backend is intentionally simple. It is a local development bridge, not the final production backend.
+
+## Database Migrations
+
+SQLite schema changes are tracked in `server/migrations/`.
+
+Migration files must use this naming format:
+
+```text
+001_initial.sql
+002_add_receipts.sql
+003_add_indexes.sql
+```
+
+On API startup, the server creates `schema_migrations`, applies pending migration files in filename order, records each applied file, and then seeds demo data if the database is empty.
+
+The public health endpoint includes the applied migration filenames:
+
+```text
+GET /api/health
+```
+
+Keep migrations additive where possible. For risky schema changes, create a backup first and add backend tests that prove existing data still loads correctly.
 
 ## Demo Users
 
@@ -202,11 +225,12 @@ Restore behavior is intentionally conservative for SQLite: the API responds with
 
 1. Add the TypeScript type in `src/data.ts`.
 2. Add seed data if useful.
-3. Add the SQLite table in `server/schema.sql`.
-4. Add the table columns in `server/index.mjs`.
-5. Add the API resource type in `src/api.ts`.
-6. Add the UI section and nav item in `src/App.tsx`.
-7. Run `npm run check`.
+3. Add the database change in a new `server/migrations/*.sql` file.
+4. Update `server/schema.sql` so the schema snapshot stays useful.
+5. Add the table columns in `server/index.mjs`.
+6. Add the API resource type in `src/api.ts`.
+7. Add the UI section and nav item in `src/App.tsx`.
+8. Run `npm run check`.
 
 ## Reports
 
@@ -218,10 +242,9 @@ Future improvement: move official report generation to the backend.
 
 Before real company deployment:
 
-- Add authentication.
-- Add role-based permissions.
-- Add backend validation.
-- Add database migrations.
+- Harden authentication for production deployment.
+- Expand role-based permissions.
+- Expand backend validation.
 - Add automated API and UI tests.
 - Add Arabic PDF report generation on the backend.
 - Add database backups.
@@ -230,9 +253,8 @@ Before real company deployment:
 
 ## Known Limitations
 
-- No login system yet.
-- No server-side permissions yet.
-- SQLite is local-development only.
+- The current login system is demo/local oriented and needs production session hardening.
+- SQLite is local-development oriented.
 - The frontend still supports local fallback.
 - Report PDF Arabic shaping/fonts need production hardening.
 - Ejar and VAT fields are stored, but this app does not integrate with official government services.

@@ -11,6 +11,8 @@ All notable changes to this project will be documented here.
 - Role-aware frontend navigation and login screen.
 - Audit logs for auth, CRUD, backup, and restore actions.
 - Manager backup/restore endpoints and Settings UI.
+- Versioned SQLite migrations through `server/migrations`.
+- Applied migration list in `/api/health`.
 - Backend validation for required fields, enum values, dates, positive numbers, references, unique Ejar numbers, and payment-contract alignment.
 - Backend delete protection for related records.
 - Backend test suite using Node's built-in test runner.

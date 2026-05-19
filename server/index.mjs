@@ -10,6 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const dataDir = join(__dirname, 'data')
 const dbPath = process.env.DATABASE_PATH || join(dataDir, 'aqarati.db')
 const backupDir = process.env.BACKUP_DIR || join(dataDir, 'backups')
+const migrationsDir = join(__dirname, 'migrations')
 
 const selectedDataDir = dirname(dbPath)
 if (!existsSync(selectedDataDir)) {
@@ -21,7 +22,7 @@ if (!existsSync(backupDir)) {
 
 const db = new Database(dbPath)
 db.pragma('foreign_keys = ON')
-db.exec(readFileSync(join(__dirname, 'schema.sql'), 'utf8'))
+runMigrations()
 
 const app = express()
 const port = Number(process.env.API_PORT || 4000)
@@ -117,7 +118,7 @@ const seed = {
 seedDatabase()
 
 app.get('/api/health', (_request, response) => {
-  response.json({ ok: true, database: dbPath })
+  response.json({ ok: true, database: dbPath, migrations: listAppliedMigrations().map((migration) => migration.filename) })
 })
 
 app.post('/api/auth/login', (request, response) => {
@@ -260,6 +261,33 @@ function seedDatabase() {
     }
   })
   transaction()
+}
+
+function runMigrations() {
+  db.exec(`
+    create table if not exists schema_migrations (
+      filename text primary key,
+      appliedAt text not null
+    )
+  `)
+
+  const files = readdirSync(migrationsDir)
+    .filter((name) => /^\d+_.+\.sql$/.test(name))
+    .sort((a, b) => a.localeCompare(b))
+  const applied = new Set(listAppliedMigrations().map((migration) => migration.filename))
+  const applyMigration = db.transaction((filename, sql) => {
+    db.exec(sql)
+    db.prepare('insert into schema_migrations (filename, appliedAt) values (?, ?)').run(filename, new Date().toISOString())
+  })
+
+  for (const filename of files) {
+    if (applied.has(filename)) continue
+    applyMigration(filename, readFileSync(join(migrationsDir, filename), 'utf8'))
+  }
+}
+
+function listAppliedMigrations() {
+  return db.prepare('select filename, appliedAt from schema_migrations order by filename').all()
 }
 
 function list(table) {

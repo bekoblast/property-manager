@@ -15,25 +15,25 @@ Status: mostly complete.
 
 Remaining:
 
-- Add polished screenshots.
-- Add automated test scripts for API and UI smoke checks.
+- Continue polishing screenshots as the UI evolves.
+- Add automated UI smoke checks to CI.
 
 ## Phase 2: Production Backend
 
-- Replace ad hoc SQLite setup with migration tooling.
-- Add server-side validation.
+- Replace ad hoc SQLite setup with migration tooling. Done for local SQLite.
+- Add server-side validation. Done for the current resources.
 - Add structured error responses.
 - Add pagination, filtering, and search endpoints.
 - Move official report generation to the backend.
-- Add backup and restore commands.
+- Add backup and restore commands. Done for local SQLite.
 - Prepare PostgreSQL deployment path.
 
 ## Phase 3: Authentication And Roles
 
-- Add login.
-- Add manager, accountant, leasing, maintenance, and viewer roles.
-- Protect API endpoints by role.
-- Add audit logs for changes to contracts, payments, and tenant data.
+- Add login. Done for local/demo use.
+- Add manager, accountant, leasing, maintenance, and viewer roles. Done.
+- Protect API endpoints by role. Done for current resources.
+- Add audit logs for changes to contracts, payments, and tenant data. Done.
 
 ## Phase 4: Saudi Compliance Hardening
 
