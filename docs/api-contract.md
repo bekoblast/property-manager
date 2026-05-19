@@ -53,6 +53,34 @@ GET    /api/reports/portfolio.xlsx
 GET    /api/reports/portfolio.pdf
 ```
 
+List endpoints keep the simple array response when called with no query string:
+
+```text
+GET /api/units
+```
+
+When `q`, `page`, `perPage`, or supported filter fields are provided, list endpoints return a paginated response:
+
+```json
+{
+  "data": [],
+  "meta": {
+    "page": 1,
+    "perPage": 25,
+    "total": 0,
+    "pages": 0
+  }
+}
+```
+
+Examples:
+
+```text
+GET /api/units?q=A-101
+GET /api/units?status=شاغرة&page=1&perPage=25
+GET /api/payments?contractId=c1
+```
+
 ## Important Rules
 
 - Do not delete a property if it still has units.

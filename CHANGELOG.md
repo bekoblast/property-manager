@@ -13,6 +13,8 @@ All notable changes to this project will be documented here.
 - Manager backup/restore endpoints and Settings UI.
 - Versioned SQLite migrations through `server/migrations`.
 - Applied migration list in `/api/health`.
+- SQLite indexes for common lookups and dashboard/report filters.
+- Paginated, searchable, filterable list API responses when query parameters are provided.
 - Backend validation for required fields, enum values, dates, positive numbers, references, unique Ejar numbers, and payment-contract alignment.
 - Backend delete protection for related records.
 - Backend test suite using Node's built-in test runner.

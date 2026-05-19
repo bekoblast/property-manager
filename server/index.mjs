@@ -79,6 +79,24 @@ const rolePermissions = {
 
 const hiddenResources = new Set(['users', 'audit_logs'])
 
+const searchFields = {
+  properties: ['name', 'city', 'district', 'type', 'manager'],
+  units: ['number', 'type', 'status', 'ejar', 'contractEnd', 'nextDue'],
+  tenants: ['name', 'mobile', 'nationalId', 'email'],
+  contracts: ['ejar', 'start', 'end', 'frequency', 'status'],
+  payments: ['dueDate', 'status'],
+  maintenance: ['title', 'priority', 'status', 'date'],
+}
+
+const filterFields = {
+  properties: ['city', 'district', 'type', 'manager'],
+  units: ['propertyId', 'tenantId', 'type', 'status', 'vat'],
+  tenants: ['mobile', 'nationalId', 'email'],
+  contracts: ['unitId', 'tenantId', 'frequency', 'status', 'vat'],
+  payments: ['contractId', 'unitId', 'tenantId', 'dueDate', 'status'],
+  maintenance: ['unitId', 'priority', 'status', 'date'],
+}
+
 const seed = {
   users: [
     { id: 'user-manager', name: 'مدير النظام', email: 'manager@aqarati.local', role: 'manager', password: 'demo12345', active: 1 },
@@ -197,7 +215,15 @@ app.get('/api/dashboard', authenticate, authorize('dashboard', 'read'), (_reques
 for (const table of Object.keys(tables)) {
   if (hiddenResources.has(table)) continue
 
-  app.get(`/api/${table}`, authenticate, authorize(table, 'read'), (_request, response) => {
+  app.get(`/api/${table}`, authenticate, authorize(table, 'read'), (request, response) => {
+    if (hasListQuery(request.query)) {
+      const result = queryList(table, request.query)
+      return response.json({
+        data: result.data.map((item) => serialize(table, item)),
+        meta: result.meta,
+      })
+    }
+
     response.json(list(table).map((item) => serialize(table, item)))
   })
 
@@ -292,6 +318,53 @@ function listAppliedMigrations() {
 
 function list(table) {
   return db.prepare(`select * from ${table}`).all().map((row) => normalizeFromDb(table, row))
+}
+
+function queryList(table, query) {
+  const page = clampNumber(query.page, 1, 1, 100000)
+  const perPage = clampNumber(query.perPage, 25, 1, 100)
+  const offset = (page - 1) * perPage
+  const clauses = []
+  const params = []
+  const q = typeof query.q === 'string' ? query.q.trim() : ''
+
+  if (q) {
+    const fields = searchFields[table] || []
+    clauses.push(`(${fields.map((field) => `${field} like ?`).join(' or ')})`)
+    params.push(...fields.map(() => `%${q}%`))
+  }
+
+  for (const field of filterFields[table] || []) {
+    const value = query[field]
+    if (typeof value !== 'string' || value.trim() === '') continue
+    clauses.push(`${field} = ?`)
+    params.push(normalizeQueryValue(value))
+  }
+
+  const where = clauses.length ? ` where ${clauses.join(' and ')}` : ''
+  const total = db.prepare(`select count(*) as count from ${table}${where}`).get(...params).count
+  const rows = db.prepare(`select * from ${table}${where} order by id limit ? offset ?`).all(...params, perPage, offset)
+
+  return {
+    data: rows.map((row) => normalizeFromDb(table, row)),
+    meta: { page, perPage, total, pages: Math.ceil(total / perPage) },
+  }
+}
+
+function hasListQuery(query) {
+  return ['q', 'page', 'perPage'].some((key) => key in query) || Object.keys(query).length > 0
+}
+
+function clampNumber(value, fallback, min, max) {
+  const number = Number(value || fallback)
+  if (!Number.isFinite(number)) return fallback
+  return Math.min(Math.max(Math.trunc(number), min), max)
+}
+
+function normalizeQueryValue(value) {
+  if (value === 'true') return 1
+  if (value === 'false') return 0
+  return value.trim()
 }
 
 function find(table, id) {

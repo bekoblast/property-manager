@@ -41,12 +41,30 @@ after(async () => {
 test('health and dashboard endpoints respond', async () => {
   const health = await publicRequest('/health')
   assert.equal(health.ok, true)
-  assert.deepEqual(health.migrations, ['001_initial.sql'])
+  assert.deepEqual(health.migrations, ['001_initial.sql', '002_indexes.sql'])
 
   const dashboard = await request('/dashboard')
   assert.equal(dashboard.properties, 2)
   assert.equal(dashboard.units, 3)
   assert.equal(dashboard.occupancy, 67)
+})
+
+test('list endpoints support pagination and metadata', async () => {
+  const result = await request('/units?page=1&perPage=2')
+  assert.equal(result.data.length, 2)
+  assert.deepEqual(result.meta, { page: 1, perPage: 2, total: 3, pages: 2 })
+})
+
+test('list endpoints support search across safe columns', async () => {
+  const result = await request('/units?q=A-101')
+  assert.equal(result.meta.total, 1)
+  assert.equal(result.data[0].id, 'u1')
+})
+
+test('list endpoints support exact filters', async () => {
+  const result = await request('/payments?contractId=c1&perPage=10')
+  assert.equal(result.meta.total, 2)
+  assert.ok(result.data.every((payment) => payment.contractId === 'c1'))
 })
 
 test('business endpoints require authentication', async () => {

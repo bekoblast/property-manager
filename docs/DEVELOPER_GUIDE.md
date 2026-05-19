@@ -141,6 +141,23 @@ GET /api/health
 
 Keep migrations additive where possible. For risky schema changes, create a backup first and add backend tests that prove existing data still loads correctly.
 
+## List Queries
+
+CRUD list endpoints support two response shapes:
+
+- Without a query string, endpoints return the plain array used by the current frontend.
+- With `q`, `page`, `perPage`, or a supported filter field, endpoints return `{ data, meta }`.
+
+Examples:
+
+```text
+GET /api/units?q=A-101
+GET /api/units?propertyId=p1&page=1&perPage=25
+GET /api/payments?contractId=c1
+```
+
+Search and filter fields are whitelisted in `server/index.mjs`. Do not directly pass user-provided column names into SQL.
+
 ## Demo Users
 
 All demo users use this password:
