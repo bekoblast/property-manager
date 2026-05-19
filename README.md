@@ -4,6 +4,8 @@ Arabic RTL web app for managing company properties in Saudi Arabia. The app cove
 
 > Status: prototype with local backend. Do not use for real sensitive company data until authentication, permissions, validation, backups, and production deployment are complete.
 
+Netlify showcase mode is supported. The hosted demo runs fully in the browser with local demo data, while the Express + SQLite API remains available for local development.
+
 ## Features
 
 - Arabic RTL interface.
@@ -13,6 +15,7 @@ Arabic RTL web app for managing company properties in Saudi Arabia. The app cove
 - Excel and PDF report export.
 - Local Express + SQLite API.
 - API mode with browser-local fallback when the API is offline.
+- Netlify-ready showcase mode using browser-local demo data.
 - Local demo authentication with manager, accountant, leasing, maintenance, and viewer roles.
 - Manager audit log and local SQLite backup/restore tools.
 
@@ -85,6 +88,17 @@ Optional local environment:
 Copy-Item .env.example .env
 ```
 
+## Netlify Showcase
+
+The repo includes `netlify.toml`, so it can be imported from GitHub into Netlify with:
+
+```text
+Build command: npm run build
+Publish directory: dist
+```
+
+Netlify uses `VITE_SHOWCASE_MODE=true`, which skips the local API and stores demo changes in each visitor's browser. See [Netlify Deployment](docs/NETLIFY_DEPLOY.md).
+
 ## Quality Checks
 
 ```powershell
@@ -100,6 +114,7 @@ This runs lint, build, and production dependency audit.
 - [API Contract](docs/api-contract.md)
 - [Production Database Draft](docs/database-schema.sql)
 - [Public Release Checklist](docs/PUBLIC_RELEASE_CHECKLIST.md)
+- [Netlify Deployment](docs/NETLIFY_DEPLOY.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)

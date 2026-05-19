@@ -15,6 +15,8 @@ The frontend tries to connect to the API at `VITE_API_BASE_URL`. If the API is o
 
 When the API is online, users must log in before business data is loaded.
 
+For Netlify/static showcase deployments, `VITE_SHOWCASE_MODE=true` skips API checks and intentionally runs the app from browser-local demo data.
+
 ## Folder Structure
 
 ```text
@@ -68,6 +70,7 @@ Copy `.env.example` to `.env` when you need local overrides.
 
 ```text
 VITE_API_BASE_URL=http://127.0.0.1:4000/api
+VITE_SHOWCASE_MODE=false
 API_PORT=4000
 ```
 

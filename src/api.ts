@@ -1,4 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:4000/api'
+export const showcaseMode = import.meta.env.VITE_SHOWCASE_MODE === 'true'
 
 export type ApiResource = 'properties' | 'units' | 'tenants' | 'contracts' | 'payments' | 'maintenance'
 export type UserRole = 'manager' | 'accountant' | 'leasing' | 'maintenance' | 'viewer'
@@ -77,6 +78,8 @@ export async function apiDelete(resource: ApiResource, id: string): Promise<void
 }
 
 export async function apiHealth(): Promise<boolean> {
+  if (showcaseMode) return false
+
   try {
     const response = await fetch(`${API_BASE_URL}/health`)
     return response.ok

@@ -34,7 +34,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { apiAuditLogs, apiBackups, apiCreateBackup, apiDelete, apiHealth, apiList, apiLogin, apiLogout, apiMe, apiRestoreBackup, apiSave, getAuthToken, setAuthToken } from './api'
+import { apiAuditLogs, apiBackups, apiCreateBackup, apiDelete, apiHealth, apiList, apiLogin, apiLogout, apiMe, apiRestoreBackup, apiSave, getAuthToken, setAuthToken, showcaseMode } from './api'
 import type { ApiResource, AuditLog, AuthUser, BackupFile, UserRole } from './api'
 import {
   money,
@@ -96,7 +96,7 @@ function App() {
   const [modal, setModal] = useState<ModalState>(null)
   const [form, setForm] = useState<FormValues>({})
   const [apiOnline, setApiOnline] = useState(false)
-  const [syncMessage, setSyncMessage] = useState('محلي')
+  const [syncMessage, setSyncMessage] = useState(showcaseMode ? 'وضع استعراضي محلي' : 'محلي')
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [loginForm, setLoginForm] = useState<LoginForm>({ email: 'manager@aqarati.local', password: 'demo12345' })
   const [loginError, setLoginError] = useState('')
@@ -114,6 +114,12 @@ function App() {
     let active = true
 
     async function loadApiData() {
+      if (showcaseMode) {
+        setApiOnline(false)
+        setSyncMessage('وضع استعراضي محلي')
+        return
+      }
+
       const online = await apiHealth()
       if (!active) return
       setApiOnline(online)
